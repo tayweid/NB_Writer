@@ -9,6 +9,8 @@ def Markdown_Cell_to_LaTeX(cell):
 
     tex = ''
     unordered_list = False
+    unordered_sublist = False
+    numbered_list = False
     ordered_list = False
 
     for line in cell:
@@ -47,19 +49,73 @@ def Markdown_Cell_to_LaTeX(cell):
 
         # Add Unodered Lists
         try:
-            if line[0:2] == '- ':
-                line = r'\item ' + line.replace('- ','')
-                if not unordered_list:
-                    line = r'\begin{itemize}' + '\n' + line
+
+            new_item = line[0:2] == '- '
+            new_subitem = line[0:6] == '    - '
+            open_list = not unordered_list and new_item
+            open_sublist = not unordered_sublist and new_subitem
+            add_item = unordered_list and new_item
+            add_subitem = unordered_list and unordered_sublist and new_subitem
+            close_sublist_only = unordered_sublist and new_item
+            close_sublist_list = unordered_sublist and not new_subitem and not new_item
+            close_list_only = unordered_list and not unordered_sublist and not new_item and not new_subitem
+
+            if open_list:
+                line = r'    \item ' + line.replace('- ','')
+                line = r'\begin{itemize}' + '\n' + line
                 unordered_list = True
+                unordered_sublist = False
+
+            if open_sublist:
+                line = r'        \item ' + line.replace('    - ','')
+                line = r'    \begin{itemize}' + '\n' + line
+                unordered_list = True
+                unordered_sublist = True
+
+            if add_item:
+                line = r'    \item ' + line.replace('- ','')
+
+            if add_subitem:
+                line = r'        \item ' + line.replace('    - ','')
+
+            if close_sublist_only:
+                line = r'    \item ' + line.replace('- ','')
+                line = r'    \end{itemize}' + '\n' + line
+                unordered_list = True
+                unordered_sublist = False
+
+            if close_sublist_list:
+                line = r'    \end{itemize}' + '\n' + r'\end{itemize}' + '\n' + line
+                unordered_list = False
+                unordered_sublist = False
+            
+            if close_list_only:
+                line = r'\end{itemize}' + '\n' + line
+                unordered_list = False
+                unordered_sublist = False
+
+        except:
+            pass
+
+        # Add Numbered Lists
+
+        try:
+            if numbered_list: # The previous line was a list item
+                if line[0:3] in ['1. ', '2. ', '3. ', '4. ', '5. ', '6. ', '7. ', '8. ', '9. ']:
+                    line = r'    \item ' + line.replace(line[0:3],'')
+                else:
+                    line = r'\end{enumerate}' + '\n' + line
+                    numbered_list = False
             else:
-                if unordered_list:
-                    line = r'\end{itemize}' + '\n' + line
-                    unordered_list = False
+                if line[0:3] in ['1. ', '2. ', '3. ', '4. ', '5. ', '6. ', '7. ', '8. ', '9. ']:
+                    line = r'    \item ' + line.replace(line[0:3],'')
+                    line = r'\begin{enumerate}' + '\n' + line
+                    numbered_list = True
         except:
             pass
 
         # Add Ordered Lists
+
         enumerate_map = {'a)':1, 'b)':2, 'c)':3, 'd)':4, 'e)':5, 'f)':6, 'g)':7, 'h)':8, 'i)':9, 'j)':10, 'k)':11, 'l)':12, 'm)':13, 'n)':14, 'o)':15, 'p)':16, 'q)':17, 'r)':18, 's)':19, 't)':20}
         try:
             for key in enumerate_map.keys():
@@ -71,7 +127,7 @@ def Markdown_Cell_to_LaTeX(cell):
         # Add Section Headers
         try:
             if line[0:2] == '# ':
-                line = r'\section*{' + line.replace('# ','') + r'}'
+                line = r'\section*{' + line.replace('# ','').replace('\n','') + r'}' + '\n'
             if line[0:3] == '## ':
                 line = r'\subsection*{' + line.replace('## ','') + r'}'
             if line[0:4] == '### ':
@@ -83,9 +139,14 @@ def Markdown_Cell_to_LaTeX(cell):
 
         tex = tex + line
 
-    if '\item ' in line:
-        if unordered_list:
-            tex = tex + r'\end{itemize}' + '\n'
+    # If the list ends with no more lines
+
+    if unordered_sublist:
+        tex = tex + r'    \end{itemize}' + '\n'
+    if unordered_list:
+        tex = tex + r'\end{itemize}' + '\n'
+    if numbered_list:
+        tex = tex + r'\end{enumerate}' + '\n'
 
     tex = tex + '\n\n'
 
@@ -110,7 +171,7 @@ def Code_Cell_to_Latex(cell):
 
     return tex
 
-def NB_Write(notebook, title='', author='', date='', template='template', keep=False):
+def NB_Write(notebook, title='', author='', date='', template='/Users/taylorjweidman/PROJECTS/NB_Writer/Template', keep=False):
 
     # Load Template and Notebook
 
@@ -129,7 +190,7 @@ def NB_Write(notebook, title='', author='', date='', template='template', keep=F
     tex = tex + '\n'
     tex = tex + r'\begin{document}' + '\n'
     tex = tex + r'\maketitle' + '\n'
-    tex = tex + r'\vspace{-2cm}' + '\n'
+    tex = tex + r'\vspace{-2cm}' + '\n\n\n'
 
     # Format the Notebook
 
@@ -169,17 +230,18 @@ def NB_Write(notebook, title='', author='', date='', template='template', keep=F
         os.remove(f'{notebook}.tex')
 
 
-def Syllabus(course, semester, instructor='Taylor J. Weidman', details='4702 Posvar | taylorjweidman@pitt.edu'):
+def Syllabus(course, semester, instructor='Taylor J. Weidman', details='4702 Posvar | taylorjweidman@pitt.edu', keep=False):
     """ Renders the syllabus and merges with the calendar page. """
 
     from PyPDF2 import PdfMerger
     from datetime import date
     import shutil
+    import os
 
     # Render the syllabus
 
     title = '\\textbf{' + course + ' | ' + semester + '} \\\\ ' + instructor + ' \\\\ ' + details
-    NB_Write('Syllabus', title=title)
+    NB_Write('Syllabus', title=title, keep=keep)
 
     # Merge the syllabus with the calendar page
 
@@ -195,6 +257,8 @@ def Syllabus(course, semester, instructor='Taylor J. Weidman', details='4702 Pos
 
     today = date.today()
     savedate = '.'.join([str(today.year),str(today.strftime('%m')),str(today.strftime('%d'))])
+    if 'History' not in os.listdir():
+        os.mkdir('History')
     shutil.copy('Syllabus.pdf', 'History/Syllabus_'+savedate+'.pdf')
 
 def MiniExam(course, ME_number, date, keep=False):
